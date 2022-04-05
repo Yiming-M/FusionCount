@@ -1,10 +1,17 @@
 import torch
 from torch import nn, Tensor
-import torch.nn.functional as F
-from typing import Optional, Callable, List, Tuple
+from typing import Optional, Callable, List
 
 
 def _initialize_weights(model: nn.Module) -> nn.Module:
+    """
+    This function initialises the parameters of `model`.
+    Supported layers:
+    - Conv2d
+    - ConvTranspose2d
+    - Batchnorm2d
+    - Linear
+    """
     for m in model.modules():
         if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
             nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -23,10 +30,12 @@ def _initialize_weights(model: nn.Module) -> nn.Module:
 
 class ConvNormActivation(nn.Sequential):
     """
+    This snippet is adapted from `ConvNormActivation` provided by torchvision.
+
     Configurable block used for Convolution-Normalization-Activation blocks.
 
     Args:
-        - `n_channels` (`int`): number of channels in the input image.
+        - `in_channels` (`int`): number of channels in the input image.
         - `out_channels` (`int`): number of channels produced by the Convolution-Normalization-Activation block.
         - `kernel_size`: (`int`, optional): size of the convolving kernel.
             - Default: `3`
@@ -80,6 +89,30 @@ class ConvNormActivation(nn.Sequential):
 
 
 class ChannelReducer(nn.Module):
+    """
+    This module reduces the number of channels in a two-column way.
+                 Input
+                   |
+            ┌------┴------┐
+            |             |
+            |       Dilated 3x3 Conv
+            |             |
+        1x1 Conv          |
+            |             |
+            |       Dilated 3x3 Conv
+            |             |
+            └------┬------┘
+                   |
+                 Output
+
+    Args:
+        - `in_channels` (`int`): number of input channels into the block.
+        - `out_channels` (`int`): number of channels output by the block.
+        - `dilation`: (`int`, optional): the dilation rate used for each dilated conv layer.
+            - Default: `3`.
+        - `batch_norm`: (`bool`, optional): whether to use batch normalisation or not.
+            - Default: `True`.
+    """
     def __init__(
         self,
         in_channels: int,
@@ -93,6 +126,7 @@ class ChannelReducer(nn.Module):
         else:
             norm_layer = None
 
+        # Column 1: 1x1 Conv.
         conv_1 = ConvNormActivation(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -102,6 +136,8 @@ class ChannelReducer(nn.Module):
             norm_layer=norm_layer,
             activation_layer=None
         )
+
+        # Column 2: dilated 3x3 conv -> dilated 3x3 conv
         conv_2 = nn.Sequential(
             ConvNormActivation(
                 in_channels=in_channels,
@@ -122,6 +158,7 @@ class ChannelReducer(nn.Module):
                 activation_layer=None
             )
         )
+
         self.conv_1 = _initialize_weights(conv_1)
         self.conv_2 = _initialize_weights(conv_2)
         self.relu = nn.ReLU(inplace=True)
@@ -136,6 +173,21 @@ class ChannelReducer(nn.Module):
 
 
 class FeatureFuser(nn.Module):
+    """
+    This module fuses features with different receptive field sizes.
+
+    1. Feat1 -> Feat1*
+    2. Feat2 & Feat1* -> Weight2
+       Feat3 & Feat1* -> Weight3
+       ...
+    3. Feat1* | (Feat2 * Weight2 + Feat3 * Weight3 + ...)
+    4. Bottleneck.
+
+    Args:
+        - `in_channels_list` (`list[int]`): a list of the number of each feature's channels. `in_channels_list[0]` should be the number of channels of the feature from a pooling layer, while others are numbers of channels of features from conv layers. The number of output channel of this block is `in_channels_list[0]`
+        - `batch_norm` (`bool`, optional): whether to use batch normalisation or not.
+            - Default: `True`.
+    """
     def __init__(self, in_channels_list: List[int], batch_norm: bool = True) -> None:
         super(FeatureFuser, self).__init__()
         if batch_norm:
@@ -144,13 +196,17 @@ class FeatureFuser(nn.Module):
             norm_layer = None
 
         for idx, c in enumerate(in_channels_list):
+            # Pooling layer.
             if idx == 0:
                 num_1 = c
+            # The first conv layer.
             elif idx == 1:
                 num_2 = c
+            # Other conv layers.
             else:
                 assert num_2 == c
 
+        # Increase the number of channels of Feat1.
         prior_conv = ConvNormActivation(
             in_channels=num_1,
             out_channels=num_2,
@@ -160,6 +216,7 @@ class FeatureFuser(nn.Module):
         )
         self.prior_conv = _initialize_weights(prior_conv)
 
+        # Conv layer for weight generation.
         weight_net = nn.Conv2d(
             in_channels=num_2,
             out_channels=num_2,
@@ -167,6 +224,7 @@ class FeatureFuser(nn.Module):
         )
         self.weight_net = _initialize_weights(weight_net)
 
+        # Bottleneck layer.
         posterior_conv = ConvNormActivation(
             in_channels=num_2 * 2,
             out_channels=num_1,
@@ -181,9 +239,18 @@ class FeatureFuser(nn.Module):
 
     def forward(self, feats: List[Tensor]) -> Tensor:
         feat_0, feats = feats[0], feats[1:]
+
+        # Increase the number of channels.
         feat_0 = self.prior_conv(feat_0)
+
+        # Generate weights.
         weights = [self.__make_weights__(feat_0, feat) for feat in feats]
+
+        # Fuse all features.
         feats = [sum([feats[i] * weights[i] for i in range(len(weights))]) / sum(weights)] + [feat_0]
         feats = torch.cat(feats, dim=1)
+
+        # Reduce the number of channels.
         feats = self.posterior_conv(feats)
+
         return feats

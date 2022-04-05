@@ -1,16 +1,15 @@
 from torch import Tensor, nn
 import torch.nn.functional as F
-from .helpers import _initialize_weights, ConvNormActivation, FeatureFuser, ChannelReducer
-from .VGG import VGG
+from helpers import _initialize_weights, ConvNormActivation, FeatureFuser, ChannelReducer
+from vgg import VGG
 
 
-class ARFCountV0(nn.Module):
+class FusionCount(nn.Module):
     """
-    Subtraction in Weights: yes
-    Dilated Conv in Decoding: yes
+    The official PyTorch implementation of the model proposed in FusionCount: Efficient Crowd Counting via Multiscale Feature Fusion.
     """
     def __init__(self, batch_norm: bool = True) -> None:
-        super(ARFCountV0, self).__init__()
+        super(FusionCount, self).__init__()
         if batch_norm:
             self.encoder = VGG(name="vgg16_bn", pretrained=True, start_idx=2)
         else:

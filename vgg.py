@@ -2,9 +2,9 @@ import torch
 from torch import nn, Tensor
 from torch.hub import load_state_dict_from_url
 from typing import List, Union, cast, Optional
-from .helpers import InvertedResidual, ConvNormActivation
-from .helpers import _initialize_weights, _make_divisible
+from helpers import _initialize_weights
 
+# This script has been adapted from the vgg.py in torchvision (https://github.com/pytorch/vision/blob/main/torchvision/models/vgg.py).
 
 model_urls = {
     'vgg11': 'https://download.pytorch.org/models/vgg11-8a719046.pth',
