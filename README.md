@@ -1,6 +1,6 @@
 # FusionCount
 
-Official PyTorch implementation of [*FusionCount: Efficient Crowd Counting via Multiscale Feature Fusion*](https://arxiv.org/abs/2202.13660).
+Official PyTorch implementation of the ICIP 2022 paper [*FusionCount: Efficient Crowd Counting via Multiscale Feature Fusion*](https://arxiv.org/abs/2202.13660).
 
 ## Requirements
 
@@ -16,7 +16,16 @@ ShanghaiTech A & B can be found on [Kaggle](https://www.kaggle.com/datasets/tthi
 
 ## Training
 
-Please refer to [DM-Count](https://github.com/cvlab-stonybrook/DM-Count) for data preparation and training details.
+Please refer to [DM-Count](https://github.com/cvlab-stonybrook/DM-Count) for data preparation and training details. Please notice that you will also have to normalise the predicted density map, as illustrated in the code snippet from [DM-Count/models.py](https://github.com/cvlab-stonybrook/DM-Count/blob/master/models.py) below.
+
+```python
+...
+mu = self.density_layer(x)
+B, C, H, W = mu.size()
+mu_sum = mu.view([B, -1]).sum(1).unsqueeze(1).unsqueeze(2).unsqueeze(3)
+mu_normed = mu / (mu_sum + 1e-6)
+return mu, mu_normed
+```
 
 ## Results
 
@@ -35,24 +44,17 @@ Please refer to [DM-Count](https://github.com/cvlab-stonybrook/DM-Count) for dat
 
 ## Citation
 
-We have submitted the paper to IEEE ICIP 2022, and it's currently under review. Please cite from arXiv if you found our work useful.
+The paper has been accepted by ICIP 2022 and published on [IEEE Xplore](https://ieeexplore.ieee.org/document/9897322). You can also find the arXiv version [here](https://arxiv.org/abs/2202.13660). Please cite us if you find it useful!
 
-```
-@misc{https://doi.org/10.48550/arxiv.2202.13660,
-  doi = {10.48550/ARXIV.2202.13660},
-  
-  url = {https://arxiv.org/abs/2202.13660},
-  
-  author = {Ma, Yiming and Sanchez, Victor and Guha, Tanaya},
-  
-  keywords = {Computer Vision and Pattern Recognition (cs.CV), FOS: Computer and information sciences, FOS: Computer and information sciences},
-  
-  title = {FusionCount: Efficient Crowd Counting via Multiscale Feature Fusion},
-  
-  publisher = {arXiv},
-  
-  year = {2022},
-  
-  copyright = {arXiv.org perpetual, non-exclusive license}
+```latex
+@INPROCEEDINGS{9897322,
+  author={Ma, Yiming and Sanchez, Victor and Guha, Tanaya},
+  booktitle={2022 IEEE International Conference on Image Processing (ICIP)},
+  title={Fusioncount: Efficient Crowd Counting Via Multiscale Feature Fusion},
+  year={2022},
+  volume={},
+  number={},
+  pages={3256-3260},
+  doi={10.1109/ICIP46576.2022.9897322}
 }
 ```
